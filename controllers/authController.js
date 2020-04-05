@@ -4,93 +4,65 @@ const jwt = require('jsonwebtoken')
 const ErrorHandler = require('../utils/ErrorHandler')
 const User = require('../models/User')
 
-exports.signup = (req, res, next) => {
-    User.findOne({ username: req.body.username })
-        .exec()
-        .then(user => {
-            if (user) {
-                const error = new ErrorHandler('username already taken', 409)
-                next(error)
-            } else {
-                bcrypt.hash(req.body.password, 10, (err, securePassword) => {
-                    if (err) {
-                        const error = new ErrorHandler('issue with bcrypt', 500)
-                        next(error)
-                    } else {
-                        const user = new User({
-                            username: req.body.username,
-                            password: securePassword,
-                            displayName: req.body.nickname
-                        })
-                        user.save()
-                            .then(result => {
-                                res.status(201).json({
-                                    user: result,
-                                    message: 'user created'
-                                })
-                            })
-                            .catch(err => {
-                                const error = new ErrorHandler('MongoDB could not create this user', 500)
-                                next(error)
-                            })
-                        //
-                    }
-
-                })
-            }
+exports.signup = async (req, res, next) => {
+    const foundUser = await User.findOne({ username: req.body.username })
+    if (foundUser) {
+        const error = new ErrorHandler('username already taken', 409)
+        return next(error)
+    }
+    bcrypt.hash(req.body.password, 10, async (err, securePassword) => {
+        if (err) {
+            const error = new ErrorHandler('issue with bcrypt', 500)
+            return next(error)
+        } 
+        const user = await User.create({
+            username: req.body.username,
+            password: securePassword,
+            displayName: req.body.nickname
         })
-    //
+        return res.status(201).json({
+            user,
+            message: 'user created'
+        })
+    })
 }
 
-exports.login = (req, res, next) => {
-    User.findOne({ username: req.body.username })
-        .exec()
-        .then(user => {
-            if (!user) {
-                const error = new ErrorHandler('username doesnt exist', 400)
-                next(error)
-            } else {
-                bcrypt.compare(req.body.password, user.password, (err, result) => {
-                    if (err) {
-                        const error = new ErrorHandler('issue with bcrypt', 500)
-                        next(error)
-                    } else if (!result) {
-                        const error = new ErrorHandler('incorrect password', 401)
-                        next(error)
-                    } else {
-                        const token = jwt.sign({ 
-                            id: user.id 
-                        }, 
-                        process.env.JWT_KEY, { 
-                            expiresIn: process.env.JWT_EXP
-                        })
-                        return res.status(200).json({
-                            message: 'logging you in ...',
-                            user,
-                            token
-                        })
-                    }
-                })
-            }
+exports.login = async (req, res, next) => {
+    const enteredUser = await User.findOne({ username: req.body.username })
+    if (!enteredUser) {
+        const error = new ErrorHandler('username doesnt exist', 400)
+        return next(error)
+    } 
+    bcrypt.compare(req.body.password, enteredUser.password, async (err, result) => {
+        if (err) {
+            const error = new ErrorHandler('issue with bcrypt', 500)
+            return next(error)
+        } else if (!result) {
+            const error = new ErrorHandler('incorrect password', 401)
+            return next(error)
+        } 
+        const token = jwt.sign({ id: user.id }, process.env.JWT_KEY, { 
+            expiresIn: process.env.JWT_EXP
         })
-        .catch(err => {
-            res.status(500).json({
-                error: err
-            })
+        return res.status(200).json({
+            message: 'logging you in ...',
+            user,
+            token
         })
-    //
+    })
 }
 
 exports.serveUser = async (req, res, next) => {
     const token = req.headers.authorization.split(' ')[1]
     const decoded = jwt.verify(token, process.env.JWT_KEY, (err, decodedToken) => {
         if (err) {
-            return next(new ErrorHandler('no token', 401))
+            const error = new ErrorHandler('no token', 401)
+            return next(error)
         }
         return decodedToken.id
     })
     const user = await User.findById(decoded)
-    res.status(200).json({
+    return res.status(200).json({
         user
     })
 }
